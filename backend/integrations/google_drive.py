@@ -12,11 +12,13 @@ import httpx
 
 from backend.core.errors import IntegrationError
 from backend.integrations.google_auth import GoogleAuth, google_error
+from backend.services.attachment_processor import content_type_for_upload
 from backend.services.retry import retry_async
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files"
 FOLDER_MIME = "application/vnd.google-apps.folder"
+RESUMABLE_AT = 4 * 1024 * 1024
 _FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ]{0,40}$")
 _HEX_KEY = re.compile(r"^[0-9a-f]+$")
@@ -41,6 +43,15 @@ def name_in_folder_query(folder_id: str, filename: str) -> str:
 
 def content_hash_query(digest: str) -> str:
     return f"appProperties has {{ key = 'bo_sha256' and value = '{digest}' }} and trashed = false"
+
+
+def _drive_upload_location(value: str | None) -> str:
+    host = ""
+    if value and value.startswith("https://"):
+        host = value.split("/", 3)[2].split(":", 1)[0].lower()
+    if host != "googleapis.com" and not host.endswith(".googleapis.com"):
+        raise IntegrationError("Google Drive did not start the upload", retryable=True)
+    return value or ""
 
 
 class DriveClient:
@@ -69,9 +80,12 @@ class DriveClient:
         json_body: dict | None = None,
         content: bytes | None = None,
         content_type: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         token = await self._auth.get_access_token()
         headers = {"Authorization": f"Bearer {token}"}
+        if extra_headers:
+            headers.update(extra_headers)
         if content_type:
             headers["Content-Type"] = content_type
         try:
@@ -241,18 +255,28 @@ class DriveClient:
         dedupe_key: str,
         content_sha256: str,
     ) -> str:
+        mime = content_type_for_upload(name, mime_type)
         metadata = {
             "name": name,
             "parents": [folder_id],
             "appProperties": {"bo_dedupe": dedupe_key, "bo_sha256": content_sha256},
         }
+        if len(data) >= RESUMABLE_AT:
+            return await self._upload_resumable(
+                metadata=metadata,
+                mime=mime,
+                data=data,
+                folder_id=folder_id,
+                name=name,
+                content_sha256=content_sha256,
+            )
         boundary = "bo" + secrets.token_hex(12)
         preamble = (
             f"--{boundary}\r\n"
             "Content-Type: application/json; charset=UTF-8\r\n\r\n"
             f"{json.dumps(metadata)}\r\n"
             f"--{boundary}\r\n"
-            f"Content-Type: {mime_type}\r\n\r\n"
+            f"Content-Type: {mime}\r\n\r\n"
         ).encode("utf-8")
         closing = f"\r\n--{boundary}--\r\n".encode("utf-8")
         body = preamble + data + closing
@@ -285,6 +309,81 @@ class DriveClient:
                     "Google Drive upload did not return a file id",
                     retryable=True,
                 )
+                if attempt == 2:
+                    raise last_error
+                continue
+            return str(file_id)
+        if last_error:
+            raise last_error
+        raise IntegrationError("Google Drive did not confirm the upload", retryable=True)
+
+    async def _upload_resumable(
+        self,
+        *,
+        metadata: dict,
+        mime: str,
+        data: bytes,
+        folder_id: str,
+        name: str,
+        content_sha256: str,
+    ) -> str:
+        params = {"uploadType": "resumable", "fields": "id", **self._shared_params()}
+        last_error: IntegrationError | None = None
+        for attempt in range(3):
+            if attempt:
+                existing = await self.find_by_content_hash(content_sha256)
+                if existing is None:
+                    existing = await self.find_by_name(folder_id, name)
+                if existing:
+                    return existing
+                await asyncio.sleep(min(2 ** (attempt - 1), 4))
+            try:
+                started = await self._send(
+                    "POST",
+                    UPLOAD_API,
+                    params=params,
+                    json_body=metadata,
+                    extra_headers={
+                        "X-Upload-Content-Type": mime,
+                        "X-Upload-Content-Length": str(len(data)),
+                    },
+                )
+                if started.status_code == 401:
+                    self._auth.invalidate()
+                    started = await self._send(
+                        "POST",
+                        UPLOAD_API,
+                        params=params,
+                        json_body=metadata,
+                        extra_headers={
+                            "X-Upload-Content-Type": mime,
+                            "X-Upload-Content-Length": str(len(data)),
+                        },
+                    )
+                if started.status_code >= 400:
+                    raise google_error(started)
+                location = _drive_upload_location(started.headers.get("location"))
+                uploaded = await self._send(
+                    "PUT",
+                    location,
+                    content=data,
+                    content_type=mime,
+                    extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+                )
+                if uploaded.status_code == 401:
+                    self._auth.invalidate()
+                    raise IntegrationError("Google Drive upload was not authorized", status_code=401, retryable=True)
+                if uploaded.status_code >= 400:
+                    raise google_error(uploaded)
+                payload = uploaded.json() if uploaded.content else {}
+            except IntegrationError as exc:
+                last_error = exc
+                if not exc.retryable or attempt == 2:
+                    raise
+                continue
+            file_id = payload.get("id")
+            if not file_id:
+                last_error = IntegrationError("Google Drive upload did not return a file id", retryable=True)
                 if attempt == 2:
                     raise last_error
                 continue

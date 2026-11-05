@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 
-import { classifyFile, folderFor, readExcerpt, sanitizeFilename } from "./files";
+import { classifyFile, contentTypeForUpload, folderFor, readExcerpt, sanitizeFilename, validateAttachment } from "./files";
 import { contentHashQuery, nameInFolderQuery } from "./google";
 import { readSession, signSession } from "./session";
 import { messageMatches } from "./trigger";
@@ -25,6 +25,22 @@ describe("filing", () => {
     expect(classifyFile("deck.bin", "application/octet-stream", data)).toBe("presentation");
     expect(await readExcerpt(data, "presentation")).toContain("Quarterly board report");
     expect(sanitizeFilename("../../secret.exe")).toBe("secret.exe");
+  });
+});
+
+describe("videos and presentations", () => {
+  it("accepts a video and a presentation gmail labels generically", () => {
+    const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypmp42"), Buffer.alloc(8)]);
+    expect(classifyFile("clip.bin", "application/octet-stream", mp4)).toBe("video");
+    expect(folderFor("video")).toBe("Videos");
+    const allowed = new Set(["application/pdf", "video/mp4"]);
+    expect(validateAttachment({ filename: "clip.mp4", mimeType: "video/mp4", size: 20, allowedMimes: allowed, maxBytes: 1000 }).ok).toBe(true);
+    expect(validateAttachment({ filename: "deck.pptx", mimeType: "application/octet-stream", size: 20, allowedMimes: allowed, maxBytes: 1000 }).ok).toBe(true);
+    expect(validateAttachment({ filename: "run.exe", mimeType: "application/octet-stream", size: 20, allowedMimes: allowed, maxBytes: 1000 }).ok).toBe(false);
+    expect(contentTypeForUpload("clip.mp4", "application/octet-stream")).toBe("video/mp4");
+    expect(contentTypeForUpload("deck.pptx", "application/octet-stream")).toBe(
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
   });
 });
 

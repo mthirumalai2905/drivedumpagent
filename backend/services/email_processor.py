@@ -176,10 +176,15 @@ class EmailProcessor:
                 )
 
     async def process_message(self, message_id: str) -> CycleResult:
+        revisit_id: int | None = None
         with session_scope(self._session_factory) as session:
             existing = repository.get_email_by_gmail_id(session, message_id)
             if existing is not None and not repository.should_reprocess(session, existing):
-                return CycleResult(skipped=1)
+                if existing.processing_status == EmailStatus.IGNORED:
+                    return CycleResult(skipped=1)
+                revisit_id = existing.id
+        if revisit_id is not None and not self._skipped_attachment_now_allowed(revisit_id):
+            return CycleResult(skipped=1)
 
         assert self._gmail is not None
         raw = await self._gmail.get_message(message_id)
@@ -400,6 +405,26 @@ class EmailProcessor:
             folder_name=uploaded.folder_name,
         )
         return CycleResult(uploaded=1)
+
+    def _skipped_attachment_now_allowed(self, email_pk: int) -> bool:
+        with session_scope(self._session_factory) as session:
+            rows = session.scalars(
+                select(Attachment).where(
+                    Attachment.email_id == email_pk,
+                    Attachment.upload_status == UploadStatus.SKIPPED,
+                )
+            ).all()
+            for row in rows:
+                verdict = validate_attachment(
+                    filename=row.sanitized_filename,
+                    mime_type=row.mime_type,
+                    size=row.file_size,
+                    allowed_mimes=self._settings.mime_allowlist,
+                    max_bytes=self._settings.max_attachment_bytes,
+                )
+                if verdict.ok:
+                    return True
+        return False
 
     def _existing_drive_file(self, filename: str, digest: str) -> str | None:
         with session_scope(self._session_factory) as session:

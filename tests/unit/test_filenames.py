@@ -44,3 +44,27 @@ def test_mime_and_size_rules():
         max_bytes=1000,
     )
     assert oversized.reason == "attachment exceeds size limit"
+    presentation = validate_attachment(
+        filename="deck.pptx",
+        mime_type="application/octet-stream",
+        size=100,
+        allowed_mimes=ALLOW,
+        max_bytes=1000,
+    )
+    assert presentation.ok is True
+    video = validate_attachment(
+        filename="clip.mp4",
+        mime_type="video/mp4",
+        size=100,
+        allowed_mimes=ALLOW | {"video/mp4"},
+        max_bytes=1000,
+    )
+    assert video.ok is True
+    generic_program = validate_attachment(
+        filename="run.exe",
+        mime_type="application/octet-stream",
+        size=100,
+        allowed_mimes=ALLOW,
+        max_bytes=1000,
+    )
+    assert generic_program.ok is False

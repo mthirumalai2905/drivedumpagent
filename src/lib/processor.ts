@@ -63,8 +63,10 @@ async function processMessage(settings: Settings, messageId: string, reprocessFa
   const existing = db.prepare(`SELECT id, processing_status FROM emails WHERE gmail_message_id = ?`).get(messageId) as
     | { id: number; processing_status: string }
     | undefined;
-  if (existing && ["completed", "ignored", "skipped"].includes(existing.processing_status) && !reprocessFailed) {
-    return empty;
+  if (existing && !reprocessFailed) {
+    if (existing.processing_status === "ignored") return empty;
+    const filedAlready = existing.processing_status === "completed" || existing.processing_status === "skipped";
+    if (filedAlready && !skippedAttachmentNowAllowed(existing.id, settings)) return empty;
   }
   const raw = await getMessage(settings, messageId);
   const parsed = parseGmailMessage(raw);
@@ -167,6 +169,25 @@ async function processAttachment(
     storeFailure(emailPk, parsed, part, validation.filename, error instanceof Error ? error.message : "upload failed", Boolean(integration.retryable), digest, data.length);
     return { ...empty, failed: 1 };
   }
+}
+
+function skippedAttachmentNowAllowed(emailPk: number, settings: Settings): boolean {
+  const rows = getDb()
+    .prepare(
+      `SELECT sanitized_filename, mime_type, file_size FROM attachments
+       WHERE email_id = ? AND upload_status = 'skipped'`,
+    )
+    .all(emailPk) as Array<{ sanitized_filename: string; mime_type: string; file_size: number }>;
+  return rows.some(
+    (row) =>
+      validateAttachment({
+        filename: row.sanitized_filename,
+        mimeType: row.mime_type,
+        size: row.file_size,
+        allowedMimes: settings.allowedMimes,
+        maxBytes: settings.maxAttachmentBytes,
+      }).ok,
+  );
 }
 
 function storedCopy(filename: string, digest: string): string | null {

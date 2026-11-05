@@ -35,10 +35,59 @@ export function validateAttachment(input: {
   if (input.size !== null && input.size > input.maxBytes) {
     return { ok: false, filename, reason: "attachment exceeds size limit" };
   }
-  if (!input.allowedMimes.has(mime)) {
+  if (!mimeAllowed(filename, mime, input.allowedMimes)) {
     return { ok: false, filename, reason: "mime type is not allowed" };
   }
   return { ok: true, filename };
+}
+
+const GENERIC_MIMES = new Set([
+  "",
+  "application/octet-stream",
+  "application/binary",
+  "binary/octet-stream",
+  "application/x-download",
+]);
+
+function extensionOf(filename: string): string {
+  const safe = sanitizeFilename(filename);
+  const dot = safe.lastIndexOf(".");
+  if (dot <= 0) return "";
+  return safe.slice(dot + 1).toLowerCase();
+}
+
+function mimeAllowed(filename: string, mime: string, allowed: Set<string>): boolean {
+  if (allowed.has(mime)) return true;
+  return GENERIC_MIMES.has(mime) && Boolean(EXTENSION_KIND[extensionOf(filename)]);
+}
+
+const EXTENSION_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  pps: "application/vnd.ms-powerpoint",
+  ppsx: "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+  pptm: "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+  potx: "application/vnd.openxmlformats-officedocument.presentationml.template",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  key: "application/vnd.apple.keynote",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  avi: "video/x-msvideo",
+  mkv: "video/x-matroska",
+  mpeg: "video/mpeg",
+  mpg: "video/mpeg",
+  ogv: "video/ogg",
+  "3gp": "video/3gpp",
+};
+
+export function contentTypeForUpload(filename: string, mimeType: string): string {
+  const mime = normalizeMime(mimeType);
+  const safe = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mime) ? mime : "";
+  if (safe && !GENERIC_MIMES.has(safe)) return safe;
+  return EXTENSION_MIME[extensionOf(filename)] || safe || "application/octet-stream";
 }
 
 export const FOLDER_NAMES: Record<string, string> = {
@@ -47,6 +96,7 @@ export const FOLDER_NAMES: Record<string, string> = {
   image: "Images",
   sheet: "Sheets",
   document: "Documents",
+  video: "Videos",
   other: "Other",
 };
 
@@ -54,6 +104,19 @@ const MIME_KIND: Record<string, string> = {
   "application/pdf": "pdf",
   "application/vnd.ms-powerpoint": "presentation",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "presentation",
+  "application/vnd.ms-powerpoint.presentation.macroEnabled.12": "presentation",
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow": "presentation",
+  "application/vnd.openxmlformats-officedocument.presentationml.template": "presentation",
+  "application/vnd.oasis.opendocument.presentation": "presentation",
+  "application/vnd.apple.keynote": "presentation",
+  "video/mp4": "video",
+  "video/quicktime": "video",
+  "video/webm": "video",
+  "video/x-msvideo": "video",
+  "video/mpeg": "video",
+  "video/3gpp": "video",
+  "video/x-matroska": "video",
+  "video/ogg": "video",
   "image/png": "image",
   "image/jpeg": "image",
   "image/gif": "image",
@@ -70,6 +133,22 @@ const EXTENSION_KIND: Record<string, string> = {
   pdf: "pdf",
   ppt: "presentation",
   pptx: "presentation",
+  pps: "presentation",
+  ppsx: "presentation",
+  pptm: "presentation",
+  potx: "presentation",
+  odp: "presentation",
+  key: "presentation",
+  mp4: "video",
+  m4v: "video",
+  mov: "video",
+  webm: "video",
+  avi: "video",
+  mkv: "video",
+  mpeg: "video",
+  mpg: "video",
+  ogv: "video",
+  "3gp": "video",
   png: "image",
   jpg: "image",
   jpeg: "image",
@@ -102,6 +181,12 @@ function sniff(data: Buffer): string | null {
   if (data.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image";
   if (data.subarray(0, 4).toString("utf8") === "GIF8") return "image";
   if (data.subarray(0, 4).toString("utf8") === "RIFF" && data.subarray(8, 12).toString("utf8") === "WEBP") return "image";
+  if (data.subarray(0, 4).toString("utf8") === "RIFF" && data.subarray(8, 12).toString("utf8") === "AVI ") return "video";
+  if (data.length >= 12 && data.subarray(4, 8).toString("utf8") === "ftyp") {
+    const brand = data.subarray(8, 12).toString("utf8");
+    if (!["heic", "heix", "heif", "mif1", "avif"].includes(brand)) return "video";
+  }
+  if (data.length >= 4 && data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3) return "video";
   if (data.subarray(0, 2).toString("utf8") === "PK") return sniffOffice(data);
   return null;
 }

@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import type { Settings } from "./config";
+import { contentTypeForUpload } from "./files";
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const DRIVE = "https://www.googleapis.com/drive/v3";
@@ -321,6 +322,7 @@ export async function uploadBytes(input: {
     "Images",
     "Sheets",
     "Documents",
+    "Videos",
     "Other",
   ].includes(input.folderName)
     ? input.folderName
@@ -399,6 +401,21 @@ async function storeOnce(
   return { fileId, duplicate: false, folderName: destination };
 }
 
+const RESUMABLE_AT = 4 * 1024 * 1024;
+
+function driveUploadLocation(value: string | null): string {
+  let url: URL;
+  try {
+    url = new URL(value || "");
+  } catch {
+    throw new IntegrationError("Google Drive did not start the upload", 0, true);
+  }
+  if (url.protocol !== "https:" || !url.hostname.endsWith("googleapis.com")) {
+    throw new IntegrationError("Google Drive did not start the upload", 0, false);
+  }
+  return url.toString();
+}
+
 async function postFile(
   input: {
     settings: Settings;
@@ -410,18 +427,12 @@ async function postFile(
   digest: string,
   key: string,
 ): Promise<string> {
-  const boundary = `bo${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 24)}`;
+  const mime = contentTypeForUpload(input.filename, input.mimeType);
   const metadata = JSON.stringify({
     name: input.filename,
     parents: [parentId],
     appProperties: { bo_dedupe: key, bo_sha256: digest },
   });
-  const preamble = Buffer.from(
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mimeType}\r\n\r\n`,
-    "utf8",
-  );
-  const closing = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
-  const body = Buffer.concat([preamble, input.data, closing]);
   let last: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (attempt) {
@@ -430,19 +441,59 @@ async function postFile(
       await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
     }
     try {
-      const payload = await requestJson(input.settings, `${UPLOAD}?uploadType=multipart&fields=id${shared(input.settings)}`, {
-        method: "POST",
-        headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-        body,
-      });
-      if (!payload.id) throw new IntegrationError("Google Drive upload did not return a file id", 0, true);
-      return String(payload.id);
+      const fileId = input.data.length >= RESUMABLE_AT
+        ? await postResumable(input.settings, metadata, mime, input.data)
+        : await postMultipart(input.settings, metadata, mime, input.data);
+      return fileId;
     } catch (error) {
       last = error;
       if (!(error instanceof IntegrationError) || !error.retryable || attempt === 2) break;
     }
   }
   throw last;
+}
+
+async function postMultipart(settings: Settings, metadata: string, mime: string, data: Buffer): Promise<string> {
+  const boundary = `bo${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 24)}`;
+  const preamble = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
+    "utf8",
+  );
+  const closing = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+  const payload = await requestJson(settings, `${UPLOAD}?uploadType=multipart&fields=id${shared(settings)}`, {
+    method: "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: Buffer.concat([preamble, data, closing]),
+  });
+  if (!payload.id) throw new IntegrationError("Google Drive upload did not return a file id", 0, true);
+  return String(payload.id);
+}
+
+async function postResumable(settings: Settings, metadata: string, mime: string, data: Buffer): Promise<string> {
+  const start = await api(settings, `${UPLOAD}?uploadType=resumable&fields=id${shared(settings)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Type": mime,
+      "X-Upload-Content-Length": String(data.length),
+    },
+    body: metadata,
+  });
+  if (!start.ok) throw await googleError(start);
+  const location = driveUploadLocation(start.headers.get("location"));
+  const put = await api(settings, location, {
+    method: "PUT",
+    headers: {
+      "Content-Type": mime,
+      "Content-Length": String(data.length),
+      "Content-Range": `bytes 0-${data.length - 1}/${data.length}`,
+    },
+    body: data as unknown as NonNullable<RequestInit["body"]>,
+  });
+  if (!put.ok) throw await googleError(put);
+  const payload = (await put.json()) as { id?: string };
+  if (!payload.id) throw new IntegrationError("Google Drive upload did not return a file id", 0, true);
+  return String(payload.id);
 }
 
 export async function exchangeCode(settings: Settings, code: string): Promise<string> {

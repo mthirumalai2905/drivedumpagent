@@ -13,6 +13,7 @@ FOLDER_NAMES = {
     "image": "Images",
     "sheet": "Sheets",
     "document": "Documents",
+    "video": "Videos",
     "other": "Other",
 }
 
@@ -20,6 +21,19 @@ _MIME_KIND = {
     "application/pdf": "pdf",
     "application/vnd.ms-powerpoint": "presentation",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": "presentation",
+    "application/vnd.ms-powerpoint.presentation.macroEnabled.12": "presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow": "presentation",
+    "application/vnd.openxmlformats-officedocument.presentationml.template": "presentation",
+    "application/vnd.oasis.opendocument.presentation": "presentation",
+    "application/vnd.apple.keynote": "presentation",
+    "video/mp4": "video",
+    "video/quicktime": "video",
+    "video/webm": "video",
+    "video/x-msvideo": "video",
+    "video/mpeg": "video",
+    "video/3gpp": "video",
+    "video/x-matroska": "video",
+    "video/ogg": "video",
     "image/png": "image",
     "image/jpeg": "image",
     "image/gif": "image",
@@ -36,6 +50,22 @@ _EXTENSION_KIND = {
     "pdf": "pdf",
     "ppt": "presentation",
     "pptx": "presentation",
+    "pps": "presentation",
+    "ppsx": "presentation",
+    "pptm": "presentation",
+    "potx": "presentation",
+    "odp": "presentation",
+    "key": "presentation",
+    "mp4": "video",
+    "m4v": "video",
+    "mov": "video",
+    "webm": "video",
+    "avi": "video",
+    "mkv": "video",
+    "mpeg": "video",
+    "mpg": "video",
+    "ogv": "video",
+    "3gp": "video",
     "png": "image",
     "jpg": "image",
     "jpeg": "image",
@@ -80,6 +110,12 @@ def _sniff(data: bytes) -> str | None:
         return "image"
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
         return "image"
+    if data.startswith(b"RIFF") and data[8:12] == b"AVI ":
+        return "video"
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] not in {b"heic", b"heix", b"heif", b"mif1", b"avif"}:
+        return "video"
+    if data.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video"
     if data.startswith(b"PK"):
         return _sniff_office_zip(data)
     return None

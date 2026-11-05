@@ -75,8 +75,8 @@ Optional:
 | `DEEPSEEK_MODEL` | Exact model id. The app checks it against the model list. |
 | `DEEPSEEK_BASE_URL` | Default `https://api.deepseek.com`. |
 | `POLL_INTERVAL_SECONDS` | Default 60. Minimum 15. |
-| `EMAIL_LOOKBACK_MINUTES` | Default 10. |
-| `MAX_ATTACHMENT_BYTES` | Default 25 MB. |
+| `EMAIL_LOOKBACK_MINUTES` | Default 1440, one day. |
+| `MAX_ATTACHMENT_BYTES` | Default 100 MB. |
 | `ALLOWED_MIME_TYPES` | Comma-separated allowlist. |
 | `LOG_TO_FILE` | Defaults to true in development and false in production. |
 

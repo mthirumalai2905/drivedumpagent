@@ -27,6 +27,19 @@ DEFAULT_MIME_TYPES = ",".join(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.ms-powerpoint",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        "application/vnd.openxmlformats-officedocument.presentationml.template",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.apple.keynote",
+        "video/mp4",
+        "video/quicktime",
+        "video/webm",
+        "video/x-msvideo",
+        "video/mpeg",
+        "video/3gpp",
+        "video/x-matroska",
+        "video/ogg",
     ]
 )
 
@@ -68,8 +81,8 @@ class Settings(BaseSettings):
     trigger_keyword: str = "back office,backoffice"
     poll_interval_seconds: int = 60
     poll_enabled: bool = True
-    email_lookback_minutes: int = 10
-    max_attachment_bytes: int = 26_214_400
+    email_lookback_minutes: int = 1440
+    max_attachment_bytes: int = 100_000_000
     max_attachments_per_email: int = 20
     max_messages_per_cycle: int = 100
     allowed_mime_types: str = DEFAULT_MIME_TYPES

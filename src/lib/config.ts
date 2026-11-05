@@ -44,6 +44,19 @@ const DEFAULT_MIMES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+  "application/vnd.openxmlformats-officedocument.presentationml.template",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/vnd.apple.keynote",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-msvideo",
+  "video/mpeg",
+  "video/3gpp",
+  "video/x-matroska",
+  "video/ogg",
 ];
 
 let cached: Settings | null = null;
@@ -88,11 +101,11 @@ export function getSettings(): Settings {
   if (pollIntervalSeconds < 15 || pollIntervalSeconds > 3600) {
     throw new Error("POLL_INTERVAL_SECONDS must be between 15 and 3600");
   }
-  const emailLookbackMinutes = integer("EMAIL_LOOKBACK_MINUTES", 10);
+  const emailLookbackMinutes = integer("EMAIL_LOOKBACK_MINUTES", 1440);
   if (emailLookbackMinutes < 1 || emailLookbackMinutes > 1440) {
     throw new Error("EMAIL_LOOKBACK_MINUTES must be between 1 and 1440");
   }
-  const maxAttachmentBytes = integer("MAX_ATTACHMENT_BYTES", 26_214_400);
+  const maxAttachmentBytes = integer("MAX_ATTACHMENT_BYTES", 100_000_000);
   if (maxAttachmentBytes < 1 || maxAttachmentBytes > 100_000_000) {
     throw new Error("MAX_ATTACHMENT_BYTES must be between 1 and 100000000");
   }

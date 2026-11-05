@@ -23,6 +23,14 @@ def test_office_zip_is_filed_and_its_text_can_be_read():
     assert "Quarterly board report" in read_excerpt(data, "presentation")
 
 
+def test_video_bytes_and_names_go_to_videos():
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 8
+    assert classify_file("clip.bin", "application/octet-stream", mp4) == "video"
+    assert folder_for("video") == "Videos"
+    assert classify_file("talk.mp4", "video/mp4", b"not-a-container") == "video"
+    assert classify_file("deck.pptx", "application/octet-stream", b"not-a-zip") == "presentation"
+
+
 def test_csv_text_is_readable_and_unknown_files_stay_in_other():
     sheet = b"vendor,amount\nAcme Supplies,1200\n"
     assert classify_file("notes.csv", "text/csv", sheet) == "sheet"
