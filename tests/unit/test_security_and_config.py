@@ -4,11 +4,11 @@ import logging
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
-from app.core.logging import JsonFormatter, RedactionFilter, log_event
-from app.core.redaction import redact
-from app.core.security import oauth_state_valid, read_session, secrets_equal, sign_session, make_oauth_state
-from app.database.session import normalize_database_url
+from backend.core.config import Settings
+from backend.core.logging import JsonFormatter, RedactionFilter, log_event
+from backend.core.redaction import redact
+from backend.core.security import oauth_state_valid, read_session, secrets_equal, sign_session, make_oauth_state
+from backend.database.session import normalize_database_url
 
 
 def test_redacts_tokens_and_database_passwords():

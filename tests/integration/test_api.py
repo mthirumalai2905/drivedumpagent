@@ -3,11 +3,11 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import Settings, get_settings
-from app.core.errors import AlreadyRunningError
-from app.http import create_app
-from app.services.email_processor import CycleResult
-from app.workers.gmail_poller import AgentRunner
+from backend.core.config import Settings, get_settings
+from backend.core.errors import AlreadyRunningError
+from backend.http import create_app
+from backend.services.email_processor import CycleResult
+from backend.workers.gmail_poller import AgentRunner
 from tests.fakes import FakeDeepSeek, FakeDrive, FakeGmail, gmail_message
 
 

@@ -1,8 +1,8 @@
 import io
 import zipfile
 
-from app.services.content_reader import read_excerpt
-from app.services.file_classifier import classify_file, folder_for
+from backend.services.content_reader import read_excerpt
+from backend.services.file_classifier import classify_file, folder_for
 
 
 def test_magic_bytes_override_a_misleading_name():

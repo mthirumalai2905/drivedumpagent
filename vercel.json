@@ -1,12 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "version": 2,
-  "builds": [
-    {
-      "src": "web/package.json",
-      "use": "@vercel/next"
-    }
-  ],
+  "framework": "nextjs",
   "crons": [
     {
       "path": "/api/cron",

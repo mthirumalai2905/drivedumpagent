@@ -2,13 +2,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.core.config import get_settings
-from app.database.locks import acquire_worker_lock, release_worker_lock
-from app.database.models import Attachment, Base, Email, EmailStatus, UploadStatus
-from app.database.repository import processing_stats
-from app.database.session import make_engine, make_session_factory, session_scope
-from app.services.email_processor import EmailProcessor
-from app.services.upload_service import UploadService, dedupe_key
+from backend.core.config import get_settings
+from backend.database.locks import acquire_worker_lock, release_worker_lock
+from backend.database.models import Attachment, Base, Email, EmailStatus, UploadStatus
+from backend.database.repository import processing_stats
+from backend.database.session import make_engine, make_session_factory, session_scope
+from backend.services.email_processor import EmailProcessor
+from backend.services.upload_service import UploadService, dedupe_key
 from tests.fakes import FakeDeepSeek, FakeDrive, FakeGmail, gmail_message
 
 

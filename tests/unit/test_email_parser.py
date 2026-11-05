@@ -1,4 +1,4 @@
-from app.services.email_parser import parse_gmail_message
+from backend.services.email_parser import parse_gmail_message
 from tests.fakes import gmail_message
 
 

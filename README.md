@@ -26,8 +26,8 @@ Google access uses the OAuth refresh token already issued for this application. 
 ## Project structure
 
 ```
-app/
-  main.py                 application factory and lifespan
+backend/
+  http.py                 application factory and lifespan
   api/                    health, records, manual run, config, OAuth
   core/                   settings, sessions, redaction, JSON logs
   database/               models, sessions, repository, Alembic runner

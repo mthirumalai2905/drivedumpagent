@@ -2,10 +2,10 @@
 
 import pytest
 
-from app.database.models import EmailStatus, UploadStatus
-from app.database.session import session_scope
+from backend.database.models import EmailStatus, UploadStatus
+from backend.database.session import session_scope
 from sqlalchemy import select
-from app.database.models import Attachment, Email
+from backend.database.models import Attachment, Email
 from tests.integration.test_pipeline import _factory, _pdf, _processor
 from tests.fakes import FakeDeepSeek, FakeDrive, FakeGmail, gmail_message
 

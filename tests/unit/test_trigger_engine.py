@@ -1,4 +1,4 @@
-from app.services.trigger_engine import message_matches
+from backend.services.trigger_engine import message_matches
 
 
 def test_subject_match_is_case_insensitive():

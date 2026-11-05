@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import base64
 
-from app.core.errors import IntegrationError
-from app.integrations.deepseek import AttachmentInsight, EmailInsight
+from backend.core.errors import IntegrationError
+from backend.integrations.deepseek import AttachmentInsight, EmailInsight
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 

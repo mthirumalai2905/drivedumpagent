@@ -1,9 +1,9 @@
 import httpx
 import pytest
 
-from app.core.errors import GoogleAuthError, IntegrationError
-from app.integrations.deepseek import DeepSeekClient
-from app.integrations.google_auth import GoogleAuth
+from backend.core.errors import GoogleAuthError, IntegrationError
+from backend.integrations.deepseek import DeepSeekClient
+from backend.integrations.google_auth import GoogleAuth
 
 
 @pytest.mark.asyncio

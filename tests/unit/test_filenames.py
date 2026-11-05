@@ -1,4 +1,4 @@
-from app.services.attachment_processor import sanitize_filename, validate_attachment
+from backend.services.attachment_processor import sanitize_filename, validate_attachment
 
 
 ALLOW = {"application/pdf", "text/plain"}

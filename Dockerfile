@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini alembic.ini
 COPY alembic alembic
-COPY app app
+COPY backend backend
 COPY main.py main.py
 
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app
