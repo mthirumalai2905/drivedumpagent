@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ app_name }} · Synx</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Synx</p>
+      <h1>{{ app_name }}</h1>
+    </div>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost">Sign out</button>
+    </form>
+  </header>
+
+  <main class="page">
+    <section>
+      <div class="section-head">
+        <h2>System health</h2>
+        <button type="button" id="refresh" class="ghost">Refresh</button>
+      </div>
+      <div id="health" class="grid"></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Processing</h2>
+        <div class="actions">
+          <button type="button" id="run" class="primary">Run cycle</button>
+          <button type="button" id="retry" class="ghost">Retry failed</button>
+        </div>
+      </div>
+      <div id="stats" class="grid"></div>
+      <p id="run-status" class="note"></p>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Activity</h2>
+        <div class="filters" id="filters">
+          <button type="button" class="filter is-active" data-status="all">All</button>
+          <button type="button" class="filter" data-status="success">Successful</button>
+          <button type="button" class="filter" data-status="failed">Failed</button>
+          <button type="button" class="filter" data-status="pending">Pending</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Subject</th>
+              <th>Sender</th>
+              <th>File</th>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody id="logs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Configuration</h2>
+        <a class="ghost link" href="/oauth/google/start">Connect Google</a>
+      </div>
+      <div id="config" class="config"></div>
+      <form id="folder-form" class="folder-form">
+        <label for="folder-name">Create a Drive folder this app can access</label>
+        <div class="folder-row">
+          <input id="folder-name" name="name" maxlength="120" value="Back Office" required>
+          <button type="submit" class="ghost">Create folder</button>
+        </div>
+        <p id="folder-result" class="note"></p>
+      </form>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+"""Test environment. Loaded before test modules import the application."""
+
+import os
+
+os.environ["APP_ENV"] = "test"
+os.environ["APP_SECRET_KEY"] = "test-secret-key-32-characters-minimum"
+os.environ["DASHBOARD_USERNAME"] = "admin"
+os.environ["DASHBOARD_PASSWORD"] = "test-password-12"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["POLL_ENABLED"] = "false"
+os.environ["LOG_TO_FILE"] = "false"
+os.environ["LOG_LEVEL"] = "INFO"
+os.environ["TRIGGER_KEYWORD"] = "back office"
+os.environ["GOOGLE_GMAIL_USER"] = "backoffice@synx.tools"
+os.environ["GOOGLE_DRIVE_FOLDER_ID"] = "test-folder"
+os.environ["DEEPSEEK_API_KEY"] = ""
+os.environ["DEEPSEEK_MODEL"] = ""
+os.environ["GOOGLE_CLIENT_ID"] = ""
+os.environ["GOOGLE_CLIENT_SECRET"] = ""
+os.environ["GOOGLE_REFRESH_TOKEN"] = ""

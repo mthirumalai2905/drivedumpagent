@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Sign in · Back Office</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <p class="eyebrow">Synx</p>
+    <h1>Back Office</h1>
+    <p class="lede">Sign in to the processing monitor.</p>
+    {% if rate_limited %}
+    <p class="alert">Too many attempts. Wait a few minutes and try again.</p>
+    {% elif error %}
+    <p class="alert">Those credentials were not accepted.</p>
+    {% endif %}
+    <form method="post" action="/login" autocomplete="off">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required maxlength="120" autofocus>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required maxlength="200">
+      <button type="submit">Continue</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: back-office
+    runtime: docker
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: Back Office
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_TO_FILE
+        value: "false"
+      - key: POLL_ENABLED
+        value: "true"
+      - key: TRIGGER_KEYWORD
+        value: back office,backoffice
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: EMAIL_LOOKBACK_MINUTES
+        value: "10"
+      - key: GOOGLE_GMAIL_USER
+        value: backoffice@synx.tools
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DATABASE_URL
+        fromDatabase:
+          name: back-office-db
+          property: connectionString
+      - key: APP_SECRET_KEY
+        sync: false
+      - key: DASHBOARD_USERNAME
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        sync: false
+
+databases:
+  - name: back-office-db
+    databaseName: backoffice
+    plan: basic-256mb

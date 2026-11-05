@@ -1,0 +1,25 @@
+{
+  "name": "backoffice-web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 8765",
+    "build": "next build",
+    "start": "next start -p 8765",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "jszip": "^3.10.1",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "unpdf": "^0.12.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
