@@ -1,6 +1,9 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "module";
+import type { DatabaseSync } from "node:sqlite";
 
 import { getSettings } from "./config";
+
+const require = createRequire(import.meta.url);
 
 let database: DatabaseSync | null = null;
 
@@ -57,9 +60,11 @@ CREATE TABLE IF NOT EXISTS worker_locks (
 
 export function getDb(): DatabaseSync {
   if (database) return database;
+  const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
   const settings = getSettings();
   database = new DatabaseSync(settings.databasePath);
-  database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  const journal = process.env.VERCEL ? "DELETE" : "WAL";
+  database.exec(`PRAGMA journal_mode = ${journal}; PRAGMA foreign_keys = ON;`);
   database.exec(SCHEMA);
   database
     .prepare(`DELETE FROM processing_logs WHERE event_type IN ('emails_discovered', 'poll_completed')`)

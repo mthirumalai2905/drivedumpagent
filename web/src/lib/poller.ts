@@ -46,6 +46,7 @@ export async function runScheduledCycle(reprocessFailed = false) {
 }
 
 export function startScheduler() {
+  if (process.env.VERCEL) return;
   if (state.started) return;
   let settings;
   try {

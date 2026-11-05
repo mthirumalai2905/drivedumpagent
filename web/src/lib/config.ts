@@ -101,7 +101,11 @@ export function getSettings(): Settings {
   if (appEnv !== "test" && deepseekBase && !deepseekBase.startsWith("https://") && !deepseekBase.startsWith("http://127.0.0.1") && !deepseekBase.startsWith("http://localhost")) {
     throw new Error("DEEPSEEK_BASE_URL must use https, except for localhost");
   }
-  const redirectUri = requiredText("GOOGLE_OAUTH_REDIRECT_URI").replace(/\/$/, "");
+  let redirectUri = requiredText("GOOGLE_OAUTH_REDIRECT_URI").replace(/\/$/, "");
+  const vercelHost = (process.env.VERCEL_PROJECT_PRODUCTION_URL || "").replace(/^https?:\/\//, "");
+  if (process.env.VERCEL && vercelHost && (!redirectUri.startsWith("https://") || redirectUri.includes("127.0.0.1") || redirectUri.includes("localhost"))) {
+    redirectUri = `https://${vercelHost}/oauth/google/callback`;
+  }
   if (appEnv === "production") {
     const missing = [
       ["GOOGLE_CLIENT_ID", requiredText("GOOGLE_CLIENT_ID")],
@@ -119,7 +123,7 @@ export function getSettings(): Settings {
 
   const repoRoot = path.resolve(process.cwd(), process.cwd().replace(/\\/g, "/").endsWith("/web") ? ".." : ".");
   const configured = requiredText("DATABASE_URL", "sqlite:///./backoffice.db");
-  let databasePath = path.join(repoRoot, "backoffice.db");
+  let databasePath = process.env.VERCEL ? "/tmp/backoffice.db" : path.join(repoRoot, "backoffice.db");
   if (configured.startsWith("sqlite:///")) {
     const raw = configured.slice("sqlite:///".length);
     databasePath = path.isAbsolute(raw) ? raw : path.resolve(repoRoot, raw.replace(/^\.\//, ""));
@@ -158,7 +162,7 @@ export function getSettings(): Settings {
     ),
     databasePath,
     lockTtlSeconds: Math.max(pollIntervalSeconds * 10, 180),
-    secureCookies: appEnv === "production",
+    secureCookies: appEnv === "production" || Boolean(process.env.VERCEL),
   };
   return cached;
 }
