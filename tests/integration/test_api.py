@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AlreadyRunningError
-from app.main import create_app
+from app.http import create_app
 from app.services.email_processor import CycleResult
 from app.workers.gmail_poller import AgentRunner
 from tests.fakes import FakeDeepSeek, FakeDrive, FakeGmail, gmail_message
