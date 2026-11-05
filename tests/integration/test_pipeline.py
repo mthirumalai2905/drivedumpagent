@@ -234,6 +234,96 @@ def test_duplicate_gmail_message_is_rejected(tmp_path):
             )
 
 
+@pytest.mark.asyncio
+async def test_same_name_or_bytes_are_not_uploaded_again():
+    drive = FakeDrive()
+    original = b"%PDF-1.4 same-bytes"
+    created = await UploadService(drive, "root").upload_bytes(
+        message_id="msg-a",
+        attachment_id="att-a",
+        filename="24hrs at NTNU.pdf",
+        mime_type="application/pdf",
+        data=original,
+        folder_name="PDFs",
+    )
+    fresh = UploadService(drive, "root")
+    same_bytes = await fresh.upload_bytes(
+        message_id="msg-b",
+        attachment_id="att-b",
+        filename="Autonomous Machine Networks.pdf",
+        mime_type="application/pdf",
+        data=original,
+        folder_name="PDFs",
+    )
+    same_name = await fresh.upload_bytes(
+        message_id="msg-c",
+        attachment_id="att-c",
+        filename="24hrs at NTNU.pdf",
+        mime_type="application/pdf",
+        data=b"%PDF-1.4 revised-bytes",
+        folder_name="PDFs",
+    )
+    other_format = await fresh.upload_bytes(
+        message_id="msg-d",
+        attachment_id="att-d",
+        filename="24hrs at NTNU.docx",
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        data=b"PK\x03\x04 different-document",
+        folder_name="Documents",
+    )
+    assert created.duplicate is False
+    assert same_bytes.duplicate is True
+    assert same_bytes.file_id == created.file_id
+    assert same_name.duplicate is True
+    assert same_name.file_id == created.file_id
+    assert other_format.duplicate is False
+    assert [item["name"] for item in drive.uploads] == ["24hrs at NTNU.pdf", "24hrs at NTNU.docx"]
+
+
+@pytest.mark.asyncio
+async def test_processor_files_a_repeated_attachment_once(tmp_path):
+    factory = _factory(tmp_path)
+    original = _pdf("ntnu")
+    revised = _pdf("ntnu-revised")
+    messages = {
+        "msg-a": gmail_message(
+            "msg-a",
+            "Back Office packet",
+            "Please file this.",
+            [("24hrs at NTNU.pdf", "application/pdf", "att-a", len(original))],
+        ),
+        "msg-b": gmail_message(
+            "msg-b",
+            "Back Office packet",
+            "Please file this again.",
+            [("Autonomous Machine Networks.pdf", "application/pdf", "att-b", len(original))],
+        ),
+        "msg-c": gmail_message(
+            "msg-c",
+            "Back Office packet",
+            "Revised copy.",
+            [("24hrs at NTNU.pdf", "application/pdf", "att-c", len(revised))],
+        ),
+    }
+    gmail = FakeGmail(
+        messages,
+        {
+            ("msg-a", "att-a"): original,
+            ("msg-b", "att-b"): original,
+            ("msg-c", "att-c"): revised,
+        },
+    )
+    drive = FakeDrive()
+    result = await _processor(factory, gmail, drive).run_cycle()
+    assert result.uploaded == 3
+    assert [item["name"] for item in drive.uploads] == ["24hrs at NTNU.pdf"]
+    with session_scope(factory) as session:
+        file_ids = list(
+            session.scalars(select(Attachment.google_drive_file_id).order_by(Attachment.id)).all()
+        )
+    assert file_ids == ["drive-1", "drive-1", "drive-1"]
+
+
 def test_worker_lock_allows_only_one_owner(tmp_path):
     factory = _factory(tmp_path)
     first = factory()

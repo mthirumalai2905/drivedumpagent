@@ -7,6 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.core.config import Settings
@@ -15,7 +16,7 @@ from backend.core.logging import log_event
 from backend.core.redaction import redact
 from backend.core.time import utcnow
 from backend.database import locks, repository
-from backend.database.models import EmailStatus, LogStatus, UploadStatus
+from backend.database.models import Attachment, EmailStatus, LogStatus, UploadStatus
 from backend.database.session import session_scope
 from backend.integrations.deepseek import AttachmentInsight, DeepSeekClient
 from backend.integrations.gmail import GmailClient
@@ -342,6 +343,21 @@ class EmailProcessor:
         mime = normalize_mime(part.mime_type)
         kind = classify_file(validation.filename, mime, data)
         folder_name = folder_for(kind)
+        prior = self._existing_drive_file(validation.filename, digest)
+        if prior:
+            self._store_success(
+                email_pk,
+                parsed,
+                part,
+                validation.filename,
+                mime,
+                digest,
+                prior,
+                duplicate=True,
+                insight=insight,
+                folder_name=folder_name,
+            )
+            return CycleResult(uploaded=1)
         excerpt = read_excerpt(data, kind)
         content_insight = await self._describe_file(part, mime, excerpt)
         if content_insight is not None:
@@ -384,6 +400,24 @@ class EmailProcessor:
             folder_name=uploaded.folder_name,
         )
         return CycleResult(uploaded=1)
+
+    def _existing_drive_file(self, filename: str, digest: str) -> str | None:
+        with session_scope(self._session_factory) as session:
+            file_id = session.scalar(
+                select(Attachment.google_drive_file_id)
+                .where(
+                    Attachment.upload_status == UploadStatus.UPLOADED,
+                    Attachment.google_drive_file_id.is_not(None),
+                    Attachment.google_drive_file_id != "",
+                    or_(
+                        Attachment.content_sha256 == digest,
+                        Attachment.sanitized_filename == filename,
+                    ),
+                )
+                .order_by(Attachment.id.asc())
+                .limit(1)
+            )
+        return str(file_id) if file_id else None
 
     async def _describe_file(
         self,

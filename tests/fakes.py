@@ -80,6 +80,8 @@ class FakeDrive:
     def __init__(self, fail: bool = False) -> None:
         self.fail = fail
         self.files: dict[str, str] = {}
+        self.by_hash: dict[str, str] = {}
+        self.by_name: dict[tuple[str, str], str] = {}
         self.uploads: list[dict] = []
         self.folders: dict[str, str] = {}
 
@@ -106,6 +108,12 @@ class FakeDrive:
     async def find_by_dedupe_key(self, key: str) -> str | None:
         return self.files.get(key)
 
+    async def find_by_content_hash(self, digest: str) -> str | None:
+        return self.by_hash.get(digest)
+
+    async def find_by_name(self, folder_id: str, filename: str) -> str | None:
+        return self.by_name.get((folder_id, filename))
+
     async def upload(
         self,
         *,
@@ -114,11 +122,15 @@ class FakeDrive:
         data: bytes,
         folder_id: str,
         dedupe_key: str,
+        content_sha256: str = "",
     ) -> str:
         if self.fail:
             raise IntegrationError("Google Drive was unavailable", status_code=503, retryable=True)
         file_id = f"drive-{len(self.uploads) + 1}"
         self.files[dedupe_key] = file_id
+        if content_sha256:
+            self.by_hash[content_sha256] = file_id
+        self.by_name[(folder_id, name)] = file_id
         self.uploads.append(
             {
                 "name": name,

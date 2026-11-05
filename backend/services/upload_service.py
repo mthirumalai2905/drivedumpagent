@@ -29,6 +29,22 @@ class UploadService:
         self._drive = drive
         self._folder_id = folder_id
         self._children: dict[str, str] = {}
+        self._seen_key: dict[str, str] = {}
+        self._seen_hash: dict[str, str] = {}
+        self._seen_name: dict[tuple[str, str], str] = {}
+
+    def _remember(
+        self,
+        key: str,
+        digest: str,
+        file_id: str,
+        parent_id: str | None = None,
+        filename: str | None = None,
+    ) -> None:
+        self._seen_key[key] = file_id
+        self._seen_hash[digest] = file_id
+        if parent_id and filename:
+            self._seen_name[(parent_id, filename)] = file_id
 
     async def upload_bytes(
         self,
@@ -46,20 +62,38 @@ class UploadService:
                 retryable=False,
             )
         destination = folder_name if folder_name in _ALLOWED_FOLDERS else "Other"
+        digest = hashlib.sha256(data).hexdigest()
         key = dedupe_key(message_id, attachment_id)
+        cached = self._seen_key.get(key) or self._seen_hash.get(digest)
+        if cached:
+            return UploadResult(file_id=cached, duplicate=True, folder_name=destination)
         existing = await self._drive.find_by_dedupe_key(key)
         if existing:
+            self._remember(key, digest, existing)
+            return UploadResult(file_id=existing, duplicate=True, folder_name=destination)
+        existing = await self._drive.find_by_content_hash(digest)
+        if existing:
+            self._remember(key, digest, existing)
             return UploadResult(file_id=existing, duplicate=True, folder_name=destination)
         parent_id = await self._child_folder(destination)
+        named = self._seen_name.get((parent_id, filename))
+        if named:
+            return UploadResult(file_id=named, duplicate=True, folder_name=destination)
+        existing = await self._drive.find_by_name(parent_id, filename)
+        if existing:
+            self._remember(key, digest, existing, parent_id, filename)
+            return UploadResult(file_id=existing, duplicate=True, folder_name=destination)
         file_id = await self._drive.upload(
             name=filename,
             mime_type=mime_type,
             data=data,
             folder_id=parent_id,
             dedupe_key=key,
+            content_sha256=digest,
         )
         if not file_id:
             raise IntegrationError("Google Drive did not confirm the upload", retryable=True)
+        self._remember(key, digest, file_id, parent_id, filename)
         return UploadResult(file_id=file_id, duplicate=False, folder_name=destination)
 
     async def _child_folder(self, name: str) -> str:

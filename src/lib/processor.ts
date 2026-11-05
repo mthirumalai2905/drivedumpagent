@@ -142,6 +142,11 @@ async function processAttachment(
   const digest = createHash("sha256").update(data).digest("hex");
   const kind = classifyFile(validation.filename, part.mimeType, data);
   const folderName = folderFor(kind);
+  const priorId = storedCopy(validation.filename, digest);
+  if (priorId) {
+    storeSuccess(emailPk, parsed, part, validation.filename, digest, data.length, { fileId: priorId, duplicate: true, folderName }, insight);
+    return { ...empty, uploaded: 1 };
+  }
   const excerpt = await readExcerpt(data, kind);
   const contentInsight = await describeDocument(settings, { filename: part.filename, mimeType: part.mimeType, excerpt });
   const chosen = contentInsight || insight;
@@ -162,6 +167,21 @@ async function processAttachment(
     storeFailure(emailPk, parsed, part, validation.filename, error instanceof Error ? error.message : "upload failed", Boolean(integration.retryable), digest, data.length);
     return { ...empty, failed: 1 };
   }
+}
+
+function storedCopy(filename: string, digest: string): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT google_drive_file_id AS file_id FROM attachments
+       WHERE upload_status = 'uploaded'
+         AND google_drive_file_id IS NOT NULL
+         AND google_drive_file_id != ''
+         AND (content_sha256 = ? OR sanitized_filename = ?)
+       ORDER BY id ASC
+       LIMIT 1`,
+    )
+    .get(digest, filename) as { file_id: string } | undefined;
+  return row?.file_id || null;
 }
 
 function emailId(gmailMessageId: string): number | null {

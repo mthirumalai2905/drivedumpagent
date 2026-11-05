@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import secrets
@@ -18,11 +19,28 @@ UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 _FOLDER_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ]{0,40}$")
+_HEX_KEY = re.compile(r"^[0-9a-f]+$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 FOLDER_HINT = (
     "The destination folder is not visible to this application. "
     "drive.file only grants access to files and folders this app created. "
     "Create a folder from the dashboard, copy its id into GOOGLE_DRIVE_FOLDER_ID, and restart."
 )
+
+
+def escape_drive_literal(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def name_in_folder_query(folder_id: str, filename: str) -> str:
+    return (
+        f"name = '{escape_drive_literal(filename)}' and '{folder_id}' in parents "
+        f"and trashed = false and mimeType != '{FOLDER_MIME}'"
+    )
+
+
+def content_hash_query(digest: str) -> str:
+    return f"appProperties has {{ key = 'bo_sha256' and value = '{digest}' }} and trashed = false"
 
 
 class DriveClient:
@@ -180,10 +198,7 @@ class DriveClient:
             )
         )
 
-    async def find_by_dedupe_key(self, key: str) -> str | None:
-        if not key or any(char not in "0123456789abcdef" for char in key):
-            return None
-        query = f"appProperties has {{ key = 'bo_dedupe' and value = '{key}' }} and trashed = false"
+    async def _first_file_id(self, query: str) -> str | None:
         params = {
             "q": query,
             "spaces": "drive",
@@ -200,6 +215,22 @@ class DriveClient:
         file_id = files[0].get("id")
         return str(file_id) if file_id else None
 
+    async def find_by_dedupe_key(self, key: str) -> str | None:
+        if not key or _HEX_KEY.fullmatch(key) is None:
+            return None
+        query = f"appProperties has {{ key = 'bo_dedupe' and value = '{key}' }} and trashed = false"
+        return await self._first_file_id(query)
+
+    async def find_by_content_hash(self, digest: str) -> str | None:
+        if _SHA256.fullmatch(digest) is None:
+            return None
+        return await self._first_file_id(content_hash_query(digest))
+
+    async def find_by_name(self, folder_id: str, filename: str) -> str | None:
+        if _FOLDER_ID.fullmatch(folder_id) is None or not filename:
+            return None
+        return await self._first_file_id(name_in_folder_query(folder_id, filename))
+
     async def upload(
         self,
         *,
@@ -208,11 +239,12 @@ class DriveClient:
         data: bytes,
         folder_id: str,
         dedupe_key: str,
+        content_sha256: str,
     ) -> str:
         metadata = {
             "name": name,
             "parents": [folder_id],
-            "appProperties": {"bo_dedupe": dedupe_key},
+            "appProperties": {"bo_dedupe": dedupe_key, "bo_sha256": content_sha256},
         }
         boundary = "bo" + secrets.token_hex(12)
         preamble = (
@@ -225,19 +257,38 @@ class DriveClient:
         closing = f"\r\n--{boundary}--\r\n".encode("utf-8")
         body = preamble + data + closing
         params = {"uploadType": "multipart", "fields": "id", **self._shared_params()}
-        payload = await retry_async(
-            lambda: self._request(
-                "POST",
-                UPLOAD_API,
-                params=params,
-                content=body,
-                content_type=f"multipart/related; boundary={boundary}",
-            )
-        )
-        file_id = payload.get("id")
-        if not file_id:
-            raise IntegrationError(
-                "Google Drive upload did not return a file id",
-                retryable=True,
-            )
-        return str(file_id)
+        last_error: IntegrationError | None = None
+        for attempt in range(3):
+            if attempt:
+                existing = await self.find_by_content_hash(content_sha256)
+                if existing is None:
+                    existing = await self.find_by_name(folder_id, name)
+                if existing:
+                    return existing
+                await asyncio.sleep(min(2 ** (attempt - 1), 4))
+            try:
+                payload = await self._request(
+                    "POST",
+                    UPLOAD_API,
+                    params=params,
+                    content=body,
+                    content_type=f"multipart/related; boundary={boundary}",
+                )
+            except IntegrationError as exc:
+                last_error = exc
+                if not exc.retryable or attempt == 2:
+                    raise
+                continue
+            file_id = payload.get("id")
+            if not file_id:
+                last_error = IntegrationError(
+                    "Google Drive upload did not return a file id",
+                    retryable=True,
+                )
+                if attempt == 2:
+                    raise last_error
+                continue
+            return str(file_id)
+        if last_error:
+            raise last_error
+        raise IntegrationError("Google Drive did not confirm the upload", retryable=True)

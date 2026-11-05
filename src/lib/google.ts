@@ -235,16 +235,76 @@ export function dedupeKey(messageId: string, attachmentId: string): string {
   return createHash("sha256").update(`${messageId}:${attachmentId}`).digest("hex");
 }
 
-export async function findByDedupeKey(settings: Settings, key: string): Promise<string | null> {
-  if (!/^[0-9a-f]+$/.test(key)) return null;
-  const q = `appProperties has { key = 'bo_dedupe' and value = '${key}' } and trashed = false`;
+export function contentDigest(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+export function escapeDriveLiteral(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+export function nameInFolderQuery(parentId: string, filename: string): string {
+  return `name = '${escapeDriveLiteral(filename)}' and '${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+}
+
+export function contentHashQuery(digest: string): string {
+  return `appProperties has { key = 'bo_sha256' and value = '${digest}' } and trashed = false`;
+}
+
+async function firstFileId(settings: Settings, q: string): Promise<string | null> {
   const params = new URLSearchParams({ q, spaces: "drive", pageSize: "1", fields: "files(id)" });
   const payload = await withRetry(() => requestJson(settings, `${DRIVE}/files?${params}${shared(settings)}`));
   const files = (payload.files as Array<{ id?: string }> | undefined) || [];
   return files[0]?.id ? String(files[0].id) : null;
 }
 
+export async function findByDedupeKey(settings: Settings, key: string): Promise<string | null> {
+  if (!/^[0-9a-f]+$/.test(key)) return null;
+  const q = `appProperties has { key = 'bo_dedupe' and value = '${key}' } and trashed = false`;
+  return firstFileId(settings, q);
+}
+
+export async function findByContentHash(settings: Settings, digest: string): Promise<string | null> {
+  if (!/^[0-9a-f]{64}$/.test(digest)) return null;
+  return firstFileId(settings, contentHashQuery(digest));
+}
+
+export async function findByNameInFolder(settings: Settings, parentId: string, filename: string): Promise<string | null> {
+  if (!/^[A-Za-z0-9_-]+$/.test(parentId) || !filename) return null;
+  return firstFileId(settings, nameInFolderQuery(parentId, filename));
+}
+
 const childFolders = new Map<string, string>();
+const filedByKey = new Map<string, string>();
+const filedByHash = new Map<string, string>();
+const filedByName = new Map<string, string>();
+const inflight = new Map<string, Promise<string>>();
+
+function recall(parentId: string, filename: string, digest: string, key: string): string | null {
+  return filedByKey.get(key) || filedByHash.get(digest) || filedByName.get(`${parentId}/${filename}`) || null;
+}
+
+function remember(parentId: string, filename: string, digest: string, key: string, fileId: string) {
+  filedByKey.set(key, fileId);
+  filedByHash.set(digest, fileId);
+  filedByName.set(`${parentId}/${filename}`, fileId);
+}
+
+async function locateCopy(
+  settings: Settings,
+  parentId: string,
+  filename: string,
+  digest: string,
+  key: string,
+): Promise<string | null> {
+  const cached = recall(parentId, filename, digest, key);
+  if (cached) return cached;
+  const byKey = await findByDedupeKey(settings, key);
+  if (byKey) return byKey;
+  const byHash = await findByContentHash(settings, digest);
+  if (byHash) return byHash;
+  return findByNameInFolder(settings, parentId, filename);
+}
 
 export async function uploadBytes(input: {
   settings: Settings;
@@ -268,19 +328,93 @@ export async function uploadBytes(input: {
   if (!input.settings.googleDriveFolderId) {
     throw new IntegrationError("GOOGLE_DRIVE_FOLDER_ID is not configured", 0, false);
   }
+  const digest = contentDigest(input.data);
   const key = dedupeKey(input.messageId, input.attachmentId);
-  const existing = await findByDedupeKey(input.settings, key);
-  if (existing) return { fileId: existing, duplicate: true, folderName: destination };
+  const claim = `${destination}/${input.filename}`;
+  const pending = inflight.get(digest) || inflight.get(`name:${claim}`);
+  if (pending) {
+    const fileId = await pending;
+    return { fileId, duplicate: true, folderName: destination };
+  }
+  let resolveFile: (fileId: string) => void = () => {};
+  let rejectFile: (error: unknown) => void = () => {};
+  const gate = new Promise<string>((resolve, reject) => {
+    resolveFile = resolve;
+    rejectFile = reject;
+  });
+  gate.catch(() => {});
+  inflight.set(digest, gate);
+  inflight.set(`name:${claim}`, gate);
+  try {
+    const result = await storeOnce(input, destination, digest, key);
+    resolveFile(result.fileId);
+    return result;
+  } catch (error) {
+    inflight.delete(digest);
+    inflight.delete(`name:${claim}`);
+    rejectFile(error);
+    throw error;
+  }
+}
+
+async function storeOnce(
+  input: {
+    settings: Settings;
+    messageId: string;
+    attachmentId: string;
+    filename: string;
+    mimeType: string;
+    data: Buffer;
+  },
+  destination: string,
+  digest: string,
+  key: string,
+): Promise<{ fileId: string; duplicate: boolean; folderName: string }> {
+  const early = filedByKey.get(key) || filedByHash.get(digest);
+  if (early) return { fileId: early, duplicate: true, folderName: destination };
+  const byKey = await findByDedupeKey(input.settings, key);
+  if (byKey) {
+    filedByKey.set(key, byKey);
+    filedByHash.set(digest, byKey);
+    return { fileId: byKey, duplicate: true, folderName: destination };
+  }
+  const byHash = await findByContentHash(input.settings, digest);
+  if (byHash) {
+    filedByKey.set(key, byHash);
+    filedByHash.set(digest, byHash);
+    return { fileId: byHash, duplicate: true, folderName: destination };
+  }
   let parentId = childFolders.get(destination);
   if (!parentId) {
     parentId = await ensureChildFolder(input.settings, input.settings.googleDriveFolderId, destination);
     childFolders.set(destination, parentId);
   }
+  const named = filedByName.get(`${parentId}/${input.filename}`) || (await findByNameInFolder(input.settings, parentId, input.filename));
+  if (named) {
+    remember(parentId, input.filename, digest, key, named);
+    return { fileId: named, duplicate: true, folderName: destination };
+  }
+  const fileId = await postFile(input, parentId, digest, key);
+  remember(parentId, input.filename, digest, key, fileId);
+  return { fileId, duplicate: false, folderName: destination };
+}
+
+async function postFile(
+  input: {
+    settings: Settings;
+    filename: string;
+    mimeType: string;
+    data: Buffer;
+  },
+  parentId: string,
+  digest: string,
+  key: string,
+): Promise<string> {
   const boundary = `bo${createHash("sha256").update(String(Math.random())).digest("hex").slice(0, 24)}`;
   const metadata = JSON.stringify({
     name: input.filename,
     parents: [parentId],
-    appProperties: { bo_dedupe: key },
+    appProperties: { bo_dedupe: key, bo_sha256: digest },
   });
   const preamble = Buffer.from(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mimeType}\r\n\r\n`,
@@ -288,15 +422,27 @@ export async function uploadBytes(input: {
   );
   const closing = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
   const body = Buffer.concat([preamble, input.data, closing]);
-  const payload = await withRetry(() =>
-    requestJson(input.settings, `${UPLOAD}?uploadType=multipart&fields=id${shared(input.settings)}`, {
-      method: "POST",
-      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-      body,
-    }),
-  );
-  if (!payload.id) throw new IntegrationError("Google Drive upload did not return a file id", 0, true);
-  return { fileId: String(payload.id), duplicate: false, folderName: destination };
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt) {
+      const found = await locateCopy(input.settings, parentId, input.filename, digest, key);
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+    try {
+      const payload = await requestJson(input.settings, `${UPLOAD}?uploadType=multipart&fields=id${shared(input.settings)}`, {
+        method: "POST",
+        headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+        body,
+      });
+      if (!payload.id) throw new IntegrationError("Google Drive upload did not return a file id", 0, true);
+      return String(payload.id);
+    } catch (error) {
+      last = error;
+      if (!(error instanceof IntegrationError) || !error.retryable || attempt === 2) break;
+    }
+  }
+  throw last;
 }
 
 export async function exchangeCode(settings: Settings, code: string): Promise<string> {

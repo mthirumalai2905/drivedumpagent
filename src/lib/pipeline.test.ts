@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 
 import { classifyFile, folderFor, readExcerpt, sanitizeFilename } from "./files";
+import { contentHashQuery, nameInFolderQuery } from "./google";
 import { readSession, signSession } from "./session";
 import { messageMatches } from "./trigger";
 
@@ -24,6 +25,19 @@ describe("filing", () => {
     expect(classifyFile("deck.bin", "application/octet-stream", data)).toBe("presentation");
     expect(await readExcerpt(data, "presentation")).toContain("Quarterly board report");
     expect(sanitizeFilename("../../secret.exe")).toBe("secret.exe");
+  });
+});
+
+describe("drive copies", () => {
+  it("treats the same name or the same bytes as one file", () => {
+    const digest = "ab".repeat(32);
+    expect(nameInFolderQuery("folder123", "24hrs at NTNU.pdf")).toBe(
+      "name = '24hrs at NTNU.pdf' and 'folder123' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
+    );
+    expect(nameInFolderQuery("folder123", "it's.pdf")).toContain("it\\'s.pdf");
+    expect(contentHashQuery(digest)).toBe(
+      `appProperties has { key = 'bo_sha256' and value = '${digest}' } and trashed = false`,
+    );
   });
 });
 
