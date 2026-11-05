@@ -121,15 +121,16 @@ export function getSettings(): Settings {
     }
   }
 
-  const repoRoot = path.resolve(process.cwd(), process.cwd().replace(/\\/g, "/").endsWith("/web") ? ".." : ".");
+  const repoRoot = path.resolve(process.cwd());
   const configured = requiredText("DATABASE_URL", "sqlite:///./backoffice.db");
-  let databasePath = process.env.VERCEL ? "/tmp/backoffice.db" : path.join(repoRoot, "backoffice.db");
+  let databasePath = path.join(repoRoot, "backoffice.db");
   if (configured.startsWith("sqlite:///")) {
     const raw = configured.slice("sqlite:///".length);
     databasePath = path.isAbsolute(raw) ? raw : path.resolve(repoRoot, raw.replace(/^\.\//, ""));
-  } else if (appEnv === "production") {
+  } else if (appEnv === "production" && !process.env.VERCEL) {
     throw new Error("This Next.js build currently stores records in SQLite. Set DATABASE_URL to a sqlite path.");
   }
+  if (process.env.VERCEL) databasePath = "/tmp/backoffice.db";
 
   cached = {
     appName: requiredText("APP_NAME", "Back Office"),
